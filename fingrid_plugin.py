@@ -37,20 +37,20 @@ def generate_bar(value: float, segment_size: float, color: str) -> str:
 
 def format_status_message(status: dict, price_data: dict) -> str:
     # Extracting values
-    consumption = float(status.get("Consumption", "N/A"))
-    production = float(status.get("Production", "N/A"))
-    net_import_export = float(status.get("NetImportExport", "N/A"))
-    hydro_power = float(status.get("HydroPower", "N/A"))
-    nuclear_power = float(status.get("NuclearPower", "N/A"))
-    cogeneration_district_heating = float(status.get("CogenerationDistrictHeating", "N/A"))
-    cogeneration_industry = float(status.get("CogenerationIndustry", "N/A"))
-    wind_power = float(status.get("WindPower", "N/A"))
-    solar_power = float(status.get("SolarPower", "N/A"))
-    other_production = float(status.get("OtherProduction", "N/A"))
-    peak_load_power = float(status.get("PeakLoadPower", "N/A"))
-    electricity_price = float(status.get("ElectricityPriceInFinland", "N/A"))
-    consumption_emission_co2 = float(status.get("ConsumptionEmissionCo2", "N/A"))
-    production_emission_co2 = float(status.get("ProductionEmissionCo2", "N/A"))
+    consumption = float(status.get("Consumption", 0))
+    production = float(status.get("Production", 0))
+    net_import_export = float(status.get("NetImportExport", 0))
+    hydro_power = float(status.get("HydroPower", 0))
+    nuclear_power = float(status.get("NuclearPower", 0))
+    cogeneration_district_heating = float(status.get("CogenerationDistrictHeating", 0))
+    cogeneration_industry = float(status.get("CogenerationIndustry", 0))
+    wind_power = float(status.get("WindPower", 0))
+    solar_power = float(status.get("SolarPower", 0))
+    other_production = float(status.get("OtherProduction", 0))
+    peak_load_power = float(status.get("PeakLoadPower", 0))
+    electricity_price = float(status.get("ElectricityPriceInFinland", 0))
+    consumption_emission_co2 = float(status.get("ConsumptionEmissionCo2", 0))
+    production_emission_co2 = float(status.get("ProductionEmissionCo2", 0))
     price_with_vat = round(electricity_price * (1 + VAT_RATE), 2)
     price_color_vat_free = price_color(electricity_price)
 
@@ -86,7 +86,7 @@ def format_status_message(status: dict, price_data: dict) -> str:
             tuonti_transfers.append((f"🔁 {transfer['Key']}{spaces}",
                                      transfer['Value'],
                                      "green",
-                                     f"<font color='{price_color(price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0))}'>{price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 'N/A'):.2f}</font>"))
+                                     f"<font color='{price_color(price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0))}'>{price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0):.2f}</font>"))
 
         elif transfer['IsExport'] and abs(transfer['Value']) > 1:
             vienti_total += abs(transfer['Value'])
@@ -95,10 +95,10 @@ def format_status_message(status: dict, price_data: dict) -> str:
             vienti_transfers.append((f"🔁 {transfer['Key']}{spaces}",
                                      transfer['Value'],
                                      "red",
-                                     f"<font color='{price_color(price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0))}'>{price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 'N/A'):.2f}</font>"))
+                                     f"<font color='{price_color(price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0))}'>{price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0):.2f}</font>"))
 
-    tuonti_weighted_price = tuonti_weighted_price / tuonti_total if tuonti_total != 0 else 'N/A'
-    vienti_weighted_price = vienti_weighted_price / vienti_total if vienti_total != 0 else 'N/A'
+    tuonti_weighted_price = tuonti_weighted_price / tuonti_total if tuonti_total != 0 else 0
+    vienti_weighted_price = vienti_weighted_price / vienti_total if vienti_total != 0 else 0
 
     net_tuonti = sum(transfer['Value'] for transfer in power_transfers if not transfer['IsExport'])
     net_vienti = sum(transfer['Value'] for transfer in power_transfers if transfer['IsExport'])
