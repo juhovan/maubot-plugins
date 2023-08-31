@@ -19,11 +19,16 @@ PRICE_ID_MAP = {
 def rgb_to_hex(red: int, green: int, blue: int) -> str:
     return f"#{red:02x}{green:02x}{blue:02x}"
 
-def price_color(price: float, min_price: float = 0, max_price: float = 200) -> str:
-    ratio = (price - min_price) / (max_price - min_price)
-    red = int(255 * ratio)
-    green = int((255 - 38) * (1 - ratio))
-    return rgb_to_hex(red, green, 0)
+def price_color(price: float, min_price: float = 0, max_price: float = 300) -> str:
+    try:
+        if price > max_price:
+            price = max_price
+        ratio = (price - min_price) / (max_price - min_price)
+        red = int(255 * ratio)
+        green = int((255 - 38) * (1 - ratio))
+        return rgb_to_hex(red, green, 0)
+    except:
+        return rgb_to_hex(0, 0, 0)
 
 def generate_bar(value: float, segment_size: float, color: str) -> str:
     filled_segments = int(value / segment_size)
