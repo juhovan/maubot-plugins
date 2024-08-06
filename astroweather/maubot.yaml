@@ -1,0 +1,11 @@
+maubot: 0.1.0
+id: fi.24-7.astroweather
+version: 0.0.3
+license: AGPL-3.0-or-later
+modules:
+- astroweather
+dependencies:
+- pyastroweatherio
+- skyfield
+- pytz
+main_class: AstroWeatherBot

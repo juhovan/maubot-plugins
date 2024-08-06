@@ -1,0 +1,12 @@
+maubot: 0.1.0
+id: fi.24-7.space
+version: 0.1.1
+license: AGPL-3.0-or-later
+modules:
+- space
+soft_dependencies:
+- python-magic>=0.4
+dependencies:
+- requests
+- beautifulsoup4
+main_class: SpaceBot
