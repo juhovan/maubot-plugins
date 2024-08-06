@@ -39,6 +39,7 @@ def generate_bar(value: float, segment_size: float, color: str) -> str:
 class Config(BaseProxyConfig):
     def do_update(self, helper: ConfigUpdateHelper) -> None:
         helper.copy("vat-rate")
+        helper.copy("electricity-tax-rate")
 
 class FingridPlugin(Plugin):
     @classmethod
@@ -91,6 +92,7 @@ class FingridPlugin(Plugin):
         production_emission_co2 =  float(status["ProductionEmissionCo2"]) if status.get("ProductionEmissionCo2") is not None else 0.0
         price_with_vat = round(electricity_price * (1 + self.config["vat-rate"]), 2)
         price_color_vat_free = price_color(electricity_price)
+        price_consumer = round(electricity_price / 10 * (1 + self.config["vat-rate"]) * (1 + self.config["electricity-tax-rate"]), 2)
 
         # Setting up list for all production types
         production_types = [
@@ -185,7 +187,8 @@ class FingridPlugin(Plugin):
         message_parts = [
             "<table><tr><th>Tyyppi</th><th>MW</th><th>Pylväskaavio</th><th>€/MWh<br></th></tr>",
             "\n".join(table_rows),
-            "</table>"
+            "</table>",
+            f"<font size='1'>Kuluttajahinta veroineen: {price_consumer} c/kWh</font>"
         ]
 
         html_message = "".join(message_parts)

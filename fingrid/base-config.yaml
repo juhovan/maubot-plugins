@@ -1,1 +1,2 @@
-vat-rate: 0.24
+vat-rate: 0.24 # VAT rate
+electricity-tax-rate: 0.0279372 # Electicity tax rate / kWh
