@@ -31,15 +31,20 @@ def price_color(price: float, min_price: float = 0, max_price: float = 300) -> s
     except:
         return rgb_to_hex(0, 0, 0)
 
-def generate_bar(value: float, segment_size: float, color: str) -> str:
+def generate_bar(value: float, segment_size: float, color: str, maxAmount: float=None) -> str:
     filled_segments = int(value / segment_size)
     bar = "|" * filled_segments
-    return f"<font color='{color}'>{bar}</font>"
+    inactive_bar = ""
+    if maxAmount is not None:
+        max_segments = int(maxAmount / segment_size)
+        inactive_bar += "|" * (max_segments - filled_segments)
+    return f"<font color='{color}'>{bar}</font><font color='darkgray'>{inactive_bar}</font>"
 
 class Config(BaseProxyConfig):
     def do_update(self, helper: ConfigUpdateHelper) -> None:
         helper.copy("vat-rate")
         helper.copy("electricity-tax-rate")
+        helper.copy("max-production-per-type")
 
 class FingridPlugin(Plugin):
     @classmethod
@@ -94,20 +99,6 @@ class FingridPlugin(Plugin):
         price_color_vat_free = price_color(electricity_price)
         price_consumer = round(electricity_price / 10 * (1 + self.config["vat-rate"]) * (1 + self.config["electricity-tax-rate"]), 2)
 
-        # Setting up list for all production types
-        production_types = [
-            ("☢️ Ydinvoima", nuclear_power, "orange"),
-            ("🏭 Kaukolämpö", cogeneration_district_heating, "gray"),
-            ("🏭 Teollisuus", cogeneration_industry, "darkgray"),
-            ("💨 Tuulivoima", wind_power, "green"),
-            ("☀️ Aurinkovoima", solar_power, "darkgoldenrod"),
-            ("🔮 Muu tuotanto", other_production, "purple"),
-            ("💧 Vesivoima", hydro_power, "blue"),
-            ("🔋 Tehoreservi", peak_load_power, "red"),
-            ("🔁 Nettotuonti", net_import_export*-1, "red" if net_import_export >= 0 else "green")
-
-        ]
-
         # New section for power transfer
         power_transfers = status.get("PowerTransferMap", [])
         price_dict = {data["id"]: data["value"] for data in price_data.get("Data", [])}
@@ -125,6 +116,7 @@ class FingridPlugin(Plugin):
                     tuonti_weighted_price += abs(transfer['Value']) * price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0)
                     tuonti_transfers.append((f"🔁 {transfer['Key']}",
                                             transfer['Value'],
+                                            transfer['MaxImport'],
                                             "green",
                                             f"<font color='{price_color(price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0))}'>{price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0):.2f}</font>"))
 
@@ -133,6 +125,7 @@ class FingridPlugin(Plugin):
                     vienti_weighted_price += abs(transfer['Value']) * price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0)
                     vienti_transfers.append((f"🔁 {transfer['Key']}",
                                             transfer['Value'],
+                                            transfer['MaxExport'],
                                             "red",
                                             f"<font color='{price_color(price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0))}'>{price_dict.get(PRICE_ID_MAP.get(transfer['Key'], transfer['Key']), 0):.2f}</font>"))
             except:
@@ -143,6 +136,22 @@ class FingridPlugin(Plugin):
 
         net_tuonti = sum(transfer['Value'] for transfer in power_transfers if not transfer['IsExport'] and transfer['Value'] is not None)
         net_vienti = sum(transfer['Value'] for transfer in power_transfers if transfer['IsExport'] and transfer['Value'] is not None)
+
+        transfer_max_import = sum(transfer['MaxImport'] for transfer in power_transfers if not transfer['IsExport'] and transfer['Value'] is not None)
+        transfer_max_export = sum(transfer['MaxExport'] for transfer in power_transfers if transfer['IsExport'] and transfer['Value'] is not None)
+
+        # Setting up list for all production types
+        production_types = [
+            ("☢️ Ydinvoima", nuclear_power, self.config["max-production-per-type"]["nuclear"], "orange"),
+            ("🏭 Kaukolämpö", cogeneration_district_heating, self.config["max-production-per-type"]["distict-heating"],  "magenta"),
+            ("🏭 Teollisuus", cogeneration_industry, self.config["max-production-per-type"]["cogeneration-industry"], "brown"),
+            ("💨 Tuulivoima", wind_power, self.config["max-production-per-type"]["wind"], "green"),
+            ("☀️ Aurinkovoima", solar_power, self.config["max-production-per-type"]["solar"], "darkgoldenrod"),
+            ("🔮 Muu tuotanto", other_production, self.config["max-production-per-type"]["other"], "purple"),
+            ("💧 Vesivoima", hydro_power, self.config["max-production-per-type"]["hydro"], "blue"),
+            ("🔋 Tehoreservi", peak_load_power, self.config["max-production-per-type"]["reserve"], "red"),
+            ("🔁 Nettotuonti", net_import_export*-1, transfer_max_export if net_import_export >= 0 else transfer_max_import, "red" if net_import_export >= 0 else "green")
+        ]
 
         # Setting up list for energy values
         energy_values = [
@@ -160,8 +169,8 @@ class FingridPlugin(Plugin):
 
         # Setting up the groups for Tuonti and Vienti
         groups = [
-            ("Tuonti", tuonti_transfers, abs(net_tuonti), tuonti_weighted_price),
-            ("Vienti", vienti_transfers, net_vienti, vienti_weighted_price)
+            ("Tuonti", tuonti_transfers, abs(net_tuonti), tuonti_weighted_price, transfer_max_import),
+            ("Vienti", vienti_transfers, net_vienti, vienti_weighted_price, transfer_max_export)
         ]
 
         # Generating table rows for Tuotanto and Kulutus
@@ -171,16 +180,16 @@ class FingridPlugin(Plugin):
             table_rows.append(f"<tr><th>{item_name}</th><th>{amount:.0f}</th><td>{bar}</td><th>{price}<br></th></tr>")
 
         # Generating table rows for Production types
-        for item_name, amount, color in production_types:
-            bar = generate_bar(abs(amount), 100, color=color)
+        for item_name, amount, maxAmount, color in production_types:
+            bar = generate_bar(abs(amount), 100, color=color, maxAmount=maxAmount)
             table_rows.append(f"<tr><td>{item_name}</td><td>{amount:.0f}</td><td>{bar}</td><td><br></td></tr>")
 
         # Generating table rows for each group
-        for group_name, items, total, avg_price in groups:
-            total_bar = generate_bar(abs(total), 100, color="green" if group_name.startswith("Tuonti") else "red")
+        for group_name, items, total, avg_price, maxAmount in groups:
+            total_bar = generate_bar(abs(total), 100, color="green" if group_name.startswith("Tuonti") else "red", maxAmount=maxAmount)
             table_rows.append(f"<tr><th>{group_name}</th><th>{total:.0f}</th><td>{total_bar}</td><th><font color='{price_color(avg_price, 0)}'>{avg_price:.2f}</font><br></th></tr>")
-            for item_name, amount, color, price in items:
-                bar = generate_bar(abs(amount), 100, color=color)
+            for item_name, amount, maxAmount, color, price in items:
+                bar = generate_bar(abs(amount), 100, color=color, maxAmount=maxAmount)
                 table_rows.append(f"<tr><td>{item_name}</td><td>{abs(amount):.0f}</td><td>{bar}</td><td>{price}<br></td></tr>")
 
         # Building message

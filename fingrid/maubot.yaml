@@ -1,6 +1,6 @@
 maubot: 0.1.0
 id: fi.24-7.maubot-fingrid
-version: 0.3.97
+version: 0.3.103
 name: Fingrid electricity status
 description: Fetches electricity status from Fingrid's API
 main_class: FingridPlugin

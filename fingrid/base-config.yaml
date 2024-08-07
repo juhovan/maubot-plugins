@@ -1,2 +1,11 @@
 vat-rate: 0.24 # VAT rate
 electricity-tax-rate: 0.0279372 # Electicity tax rate / kWh
+max-production-per-type: # Max production for each type in MW, for wind & solar https://data.fingrid.fi/datasets?search=kokonaiskapasiteetti, for the rest search for "Sähkövuosi" statistic from energia.fi
+  nuclear: 4394
+  distict-heating: 3030
+  cogeneration-industry: 2070
+  wind: 7263
+  solar: 1109
+  other: 600
+  hydro: 3210
+  reserve: 0
