@@ -177,7 +177,7 @@ class FingridPlugin(Plugin):
         table_rows = []
         for item_name, amount, color, price in energy_values:
             bar = generate_bar(abs(amount), 100, color=color)
-            table_rows.append(f"<tr><th>{item_name}</th><th>{amount:.0f}</th><td>{bar}</td><th>{price}<br></th></tr>")
+            table_rows.append(f"<tr><td><b>{item_name}</b></td><td><b>{amount:.0f}</b></td><td>{bar}</td><td><b>{price}<br></b></td></tr>")
 
         # Generating table rows for Production types
         for item_name, amount, maxAmount, color in production_types:
@@ -187,14 +187,14 @@ class FingridPlugin(Plugin):
         # Generating table rows for each group
         for group_name, items, total, avg_price, maxAmount in groups:
             total_bar = generate_bar(abs(total), 100, color="green" if group_name.startswith("Tuonti") else "red", maxAmount=maxAmount)
-            table_rows.append(f"<tr><th>{group_name}</th><th>{total:.0f}</th><td>{total_bar}</td><th><font color='{price_color(avg_price, 0)}'>{avg_price:.2f}</font><br></th></tr>")
+            table_rows.append(f"<tr><td><b>{group_name}</b></td><td><b>{total:.0f}</b></td><td>{total_bar}</td><td><b><font color='{price_color(avg_price, 0)}'>{avg_price:.2f}</font><br></b></td></tr>")
             for item_name, amount, maxAmount, color, price in items:
                 bar = generate_bar(abs(amount), 100, color=color, maxAmount=maxAmount)
                 table_rows.append(f"<tr><td>{item_name}</td><td>{abs(amount):.0f}</td><td>{bar}</td><td>{price}<br></td></tr>")
 
         # Building message
         message_parts = [
-            "<table><tr><th>Tyyppi</th><th>MW</th><th>Pylväskaavio</th><th>€/MWh<br></th></tr>",
+            "<table><tr><td><b>Tyyppi</b></td><td><b>MW</b></td><td><b>Pylväskaavio</b></td><td><b>€/MWh<br></b></td></tr>",
             "\n".join(table_rows),
             "</table>",
             f"<font size='1'>Kuluttajahinta veroineen: {price_consumer} c/kWh</font>"
