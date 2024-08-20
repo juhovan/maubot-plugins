@@ -235,7 +235,7 @@ class SpaceBot(Plugin):
             self.log.info(f"Kp forecast: {data}")
             # Iterate through the data and look for predicted values of 5 or greater in the second field
             for entry in data:
-                if entry[2] == 'predicted':
+                if entry[2] == 'predicted' or entry[2] == 'estimated':
                     result_message += f"{entry[0]}Z predicted Kp-index: {entry[1]}\n"
         else:
             result_message += f"Failed to retrieve data from the URL. Status code: {response.status_code}"
