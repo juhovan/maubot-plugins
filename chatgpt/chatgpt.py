@@ -358,8 +358,8 @@ class ChatGPTBot(Plugin):
         self.log.debug(evt)
         bot_name = self.config["bot-name"]
 
-        if evt.content.get("msgtype") == MessageType.TEXT and evt.content.get("formatted_body"):
-            formatted_body = evt.content["formatted_body"]
+        if evt.content.get("msgtype") == MessageType.TEXT:
+            formatted_body = evt.content["formatted_body"] if evt.content["formatted_body"] != None else evt.content["body"]
             pattern = re.compile(fr'<a href="https://matrix\.to/#/{re.escape(bot_name)}">.*?</a>:? ?')
             if evt.content.get("_relates_to") and evt.content["_relates_to"]["in_reply_to"].get("event_id"):
                 in_reply_to_event_id = evt.content["_relates_to"]["in_reply_to"]["event_id"]
