@@ -15,7 +15,8 @@ from typing import Tuple
 import json
 
 import requests
-import datetime
+
+vat = 1
 
 weather_map = {
     1: "Selkeää",
@@ -119,11 +120,54 @@ def weather(user, location):
 
     return weather_str
 
+fetch_electricity_prices_cache = {}
+def fetch_electricity_prices(user, date):
+    # Define the base URL template
+    url_template = "https://www.sahkohinta-api.fi/api/v1/halpa?tunnit=24&tulos=sarja&aikaraja={date}"
+
+    if date == "today":
+        # Get today's date
+        today = datetime.datetime.today()
+        date = today.strftime('%Y-%m-%d')
+    elif date == "tomorrow":
+        # Get tomorrow's date
+        today = datetime.datetime.today()
+        tomorrow = today + datetime.timedelta(days=1)
+        date = tomorrow.strftime('%Y-%m-%d')
+
+    # Check if the data is cached and valid
+    if date in fetch_electricity_prices_cache:
+        cached_data = fetch_electricity_prices_cache[date]
+        print("Returning cached data")
+        return cached_data['data']
+
+    url = url_template.format(date=date)
+
+    # Fetch the data
+    response = requests.get(url)
+    if response.status_code == 200:
+        price_data = response.json()
+    else:
+        return f"Error: Unable to fetch data for {date} (status code {response.status_code}) Maybe date is in the future? Prices for the next day are available around 14:00 UTC+2."
+
+    # Now convert the parsed data into a string
+    formatted_string = f"Sähkön hinta pyöristettynä sentteinä. Hinnat sisältävät arvonlisäveroa {round(vat*100-100,2)}%. Älä mainitse verotuksesta ellei erikseen kysytä. Kellonajat ovat Suomen aikaa. Vältä koko listan tulostamista käyttäjälle ja pyri kirjoittamaan kiinnostava kooste:\n"
+    for entry in price_data:
+        formatted_string += f"{entry['aikaleima_suomi']}: {round(float(entry['hinta'])*vat,2)} c/kWh\n"
+
+    # Store the fetched data in cache with a timestamp
+    fetch_electricity_prices_cache[date] = {
+        'data': formatted_string
+    }
+
+    return formatted_string
+
 class Config(BaseProxyConfig):
     def do_update(self, helper: ConfigUpdateHelper) -> None:
         helper.copy("api-key")
         helper.copy("bot-name")
         helper.copy("model")
+        helper.copy("vat")
 
 class ChatGPTBot(Plugin):
     def __init__(self, *args, **kwargs):
@@ -138,6 +182,8 @@ class ChatGPTBot(Plugin):
     async def start(self) -> None:
         await super().start()
         self.config.load_and_update()
+        global vat
+        vat = self.config["vat"]
 
     async def chat_gpt_request(self, query: str, conversation_history: list, evt: MessageEvent, event_id: EventID) -> None:
         sender_name = evt["sender"]
@@ -145,9 +191,19 @@ class ChatGPTBot(Plugin):
         match = pattern.search(sender_name)
         filtered_name = match.group(1) if match else ""
 
-        current_date = datetime.date.today().strftime("%A %B %d, %Y")
+        # Get the current time in UTC
+        utc_now = datetime.datetime.now(datetime.timezone.utc)
+
+        # Define a timezone offset (e.g., Europe/Helsinki UTC+2, but adjusting for daylight saving time)
+        # Let's assume we are using UTC+2 for simplicity (during standard time)
+        # For daylight saving time, you would use UTC+3. You can adjust this manually.
+        helsinki_offset = datetime.timedelta(hours=2)  # Adjust for the Helsinki time zone, for standard time
+        helsinki_now = utc_now.astimezone(datetime.timezone(helsinki_offset))
+
+        current_date = helsinki_now.strftime("%A %B %d, %Y")
+        current_time = helsinki_now.strftime("%H:%M %Z")
         messages = [
-            {"role": "system", "content": f"You are ChatGPT, a large language model trained by OpenAI. Your role is to be a chatbot called Matrix. Today is {current_date}. Prefer metric units."},
+            {"role": "system", "content": f"You are ChatGPT, a large language model trained by OpenAI. Your role is to be a chatbot called Matrix. Today is {current_date} and time is {current_time}. Prefer metric units. Do not use latex, always use markdown."},
         ]
 
         tools = [
@@ -168,6 +224,23 @@ class ChatGPTBot(Plugin):
                     }
                 }
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "fetch_electricity_prices",
+                    "description": "Get the electricity prices in Finland in cents for a given date",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "The date for which to get the electricity prices (can be 'today' or 'tomorrow' or a specific date formatted as YYYY-MM-DD)",
+                            }
+                        },
+                        "required": ["date"],
+                    }
+                }
+            }
         ]
 
         if conversation_history:
@@ -250,6 +323,7 @@ class ChatGPTBot(Plugin):
 
                 available_functions = {
                     "weather": weather,
+                    "fetch_electricity_prices": fetch_electricity_prices
                 }
 
                 for tool_id, collected_function in collected_functions.items():

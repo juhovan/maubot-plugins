@@ -3,3 +3,4 @@ api-key: ""
 bot-name: "" # Matrix ID, f.ex @test:test.io
 bot-display-name: "" # Display name, f.ex Test
 model: "gpt-4o-mini"
+vat: 1.255
