@@ -179,6 +179,7 @@ class Config(BaseProxyConfig):
         helper.copy("api-key")
         helper.copy("bot-name")
         helper.copy("model")
+        helper.copy("allowed_models")
         helper.copy("vat")
 
 class ChatGPTBot(Plugin):
@@ -215,7 +216,7 @@ class ChatGPTBot(Plugin):
         current_date = helsinki_now.strftime("%A %B %d, %Y")
         current_time = helsinki_now.strftime("%H:%M %Z")
         messages = [
-            {"role": "system", "content": f"You are ChatGPT, a large language model trained by OpenAI. Your role is to be a chatbot called Matrix. Today is {current_date} and time is {current_time}. Prefer metric units. Do not use latex, always use markdown."},
+            {"role": "developer", "content": f"Your role is to be a chatbot called Matrix. Prefer metric units. Do not use latex, always use markdown Today is {current_date} and time is {current_time}."},
         ]
 
         tools = [
@@ -261,6 +262,25 @@ class ChatGPTBot(Plugin):
 
         messages.extend([{"role": "user", "name": filtered_name, "content": query}])
 
+        # Look for model selection commands in the user's query
+        pattern = re.compile("![\w-]+")
+
+        override_model = None
+
+        # Iterate over messages and extract the first word that starts with '!'
+        for message in messages:
+            content = message["content"]
+            match = pattern.search(content)
+            if match:
+                override_model = match.group(0)[1:] # Extract the model name without the '!'
+                # Remove the word starting with '!' from the content
+                message["content"] = re.sub(pattern, "", content, count=1).strip()  # Only remove the first occurrence
+                break  # Stop after the first match is found
+
+        if override_model != None and override_model not in self.config["allowed_models"]:
+            await self._edit(evt.room_id, event_id, f"Invalid model: {override_model}")
+            return
+
         start_time = time.time()
 
         max_retries = 5
@@ -268,12 +288,20 @@ class ChatGPTBot(Plugin):
             for retry in range(max_retries + 1):  # +1 to include the initial attempt
                 try:
                     client = OpenAI(api_key=self.config["api-key"])
-                    chat_completion = client.chat.completions.create(
-                        model=self.config["model"],
-                        messages=messages,
-                        tools=tools,
-                        stream=True,
-                    )
+                    if override_model == "o1-mini":
+                        messages[0]["role"] = "user"
+                        chat_completion = client.chat.completions.create(
+                            model=override_model,
+                            messages=messages,
+                            stream=True,
+                        )
+                    else:
+                        chat_completion = client.chat.completions.create(
+                            model=override_model if override_model != None else self.config["model"],
+                            messages=messages,
+                            tools=tools,
+                            stream=True,
+                        )
                     break  # If successful, exit the loop
                 except Exception as e:
                     if retry < max_retries:
