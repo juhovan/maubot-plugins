@@ -181,12 +181,14 @@ class Config(BaseProxyConfig):
         helper.copy("model")
         helper.copy("allowed_models")
         helper.copy("vat")
+        helper.copy("api-endpoint")  # New config: custom OpenAI API endpoint
 
 class ChatGPTBot(Plugin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.assistant_replies = {}
         self.max_messages = 100  # Set the maximum number of stored messages
+        self.api_base = None  # To store custom API endpoint if set
 
     @classmethod
     def get_config_class(cls) -> Type[BaseProxyConfig]:
@@ -197,6 +199,8 @@ class ChatGPTBot(Plugin):
         self.config.load_and_update()
         global vat
         vat = self.config["vat"]
+        self.api_base = self.config.get("api-endpoint", None)  # Load custom API endpoint
+        self.api_base = self.api_base if self.api_base != '' else None  # Set to None if empty
 
     async def chat_gpt_request(self, query: str, conversation_history: list, evt: MessageEvent, event_id: EventID) -> None:
         sender_name = evt["sender"]
@@ -287,8 +291,8 @@ class ChatGPTBot(Plugin):
         for i2 in range(4 + max_retries + 1):
             for retry in range(max_retries + 1):  # +1 to include the initial attempt
                 try:
-                    client = OpenAI(api_key=self.config["api-key"])
-                    if override_model == "o1-mini":
+                    client = OpenAI(api_key=self.config["api-key"], base_url=self.api_base)
+                    if override_model == "o1-mini" or override_model == "o1" or override_model == "o1-preview" or override_model == "o3-mini":
                         messages[0]["role"] = "user"
                         chat_completion = client.chat.completions.create(
                             model=override_model,
