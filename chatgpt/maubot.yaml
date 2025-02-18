@@ -1,6 +1,6 @@
 maubot: 0.1.0
 id: fi.24-7.chatgpt
-version: 1.1.52
+version: 1.1.100
 name: ChatGPT Plugin
 description: A Matrix Maubot plugin to chat with ChatGPT
 main_class: ChatGPTBot

@@ -33,7 +33,7 @@ class ChatGPTBot(Plugin):
         self.config.load_and_update()
         self.log.debug(f"Loaded config: bot_name={self.config['bot-name']}, model={self.config['model']}")
         self.log.debug(f"Max price per token: {self.config['max_price_per_token']}")
-        
+
         self.openrouter_client = OpenRouterClient(
             api_key=self.config["api-key"],
             site_url=self.config["site_url"],
@@ -41,7 +41,7 @@ class ChatGPTBot(Plugin):
             config=self.config
         )
         self.log.info("OpenRouter client initialized")
-        
+
         # Set global VAT rate for electricity prices
         global vat
         vat = self.config["vat"]
@@ -103,7 +103,7 @@ class ChatGPTBot(Plugin):
             formatted_body = evt.content.get("formatted_body", "") or evt.content["body"]
             bot_name = self.config["bot-name"]
             pattern = re.compile(fr'<a href="https://matrix\.to/#/{re.escape(bot_name)}">.*?</a>:? ?')
-            
+
             # Check if this is a reply to the bot's message
             is_reply_to_bot = False
             in_reply_to_event_id = None
@@ -146,11 +146,11 @@ class ChatGPTBot(Plugin):
         current_content = ""
         last_update = datetime.datetime.now()
         update_interval = datetime.timedelta(milliseconds=300)  # Update every 300ms at most
-        
+
         try:
             self.log.info(f"Processing chat request from {evt['sender']}")
             self.log.debug(f"Original query: {query}")
-            
+
             # Get user info
             sender_name = evt["sender"]
             pattern = re.compile(r"^@([a-zA-Z0-9]+):")
@@ -217,34 +217,51 @@ class ChatGPTBot(Plugin):
             async def process_chunks():
                 nonlocal current_content, last_update
                 async for chunk in stream:
+                    self.log.debug(f"Received chunk: {chunk}")
                     if not isinstance(chunk, dict):
                         chunk = json.loads(chunk.model_dump_json())
-                    
+
                     if "choices" in chunk and chunk["choices"]:
                         delta = chunk["choices"][0].get("delta", {})
                         if "content" in delta and delta["content"] is not None:
                             current_content += delta["content"]
-                            now = datetime.datetime.now()
-                            if now - last_update >= update_interval:
-                                await self._edit(evt.room_id, event_id, current_content)
-                                last_update = now
-                
+                        elif "tool_calls" in delta and delta["tool_calls"]:
+                            # Append tool call details as JSON so that function call can be parsed later
+                            current_content += json.dumps(delta["tool_calls"][0]["function"])
+                        now = datetime.datetime.now()
+                        # Added logging for every streaming update
+                        self.log.debug(f"Streaming update: {current_content}")
+                        if now - last_update >= update_interval:
+                            await self._edit(evt.room_id, event_id, current_content)
+                            last_update = now
+
                 # Final update with complete content
                 if current_content:
+                    self.log.debug(f"Final streaming complete content: {current_content}")
                     await self._edit(evt.room_id, event_id, current_content)
 
             # Process the initial response
             await process_chunks()
 
             # Check for function calls in the complete response
-            function_call = parse_function_call({"choices": [{"message": {"content": current_content}}]})
+            try:
+                function_call = json.loads(current_content)
+                if not (isinstance(function_call, dict) and "name" in function_call and "arguments" in function_call):
+                    function_call = None
+            except json.JSONDecodeError:
+                function_call = None
             if function_call:
                 self.log.info(f"Function call detected: {function_call['name']}")
                 # Get the function and its arguments
                 func_name = function_call["name"]
                 func_args = function_call["arguments"]
+                # Convert string arguments to dict if necessary
+                if isinstance(func_args, str):
+                    try:
+                        func_args = json.loads(func_args)
+                    except Exception:
+                        func_args = {"raw": func_args}
                 self.log.debug(f"Function arguments: {json.dumps(func_args, indent=2)}")
-
                 if func_name in function_map:
                     # Add user info to arguments
                     func_args["user"] = sender_name
@@ -313,4 +330,4 @@ class ChatGPTBot(Plugin):
 
     @classmethod
     def get_config_class(cls) -> type[BaseProxyConfig]:
-        return Config 
+        return Config
