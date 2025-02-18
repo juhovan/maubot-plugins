@@ -16,6 +16,7 @@ class OpenRouterClient:
         self.config = config
         self._capabilities_cache = {}  # In-memory cache for model capabilities
         self._pricing_cache = {}  # In-memory cache for model pricing
+        self._all_models = None   # Cache for all models
 
         self.client = OpenAI(
             api_key=api_key,
@@ -173,7 +174,8 @@ class OpenRouterClient:
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[str] = None,
-        stream: bool = False    # new parameter
+        stream: bool = False,
+        include_reasoning: bool = False
     ) -> Any:
         """
         Create a chat completion using the OpenRouter API.
@@ -211,7 +213,8 @@ class OpenRouterClient:
             params = {
                 "model": model,
                 "messages": messages,
-                "temperature": temperature
+                "temperature": temperature,
+                "extra_body": {"include_reasoning": include_reasoning},
             }
 
             # Add optional parameters if provided
@@ -222,7 +225,7 @@ class OpenRouterClient:
             if tool_choice is not None:
                 params["tool_choice"] = tool_choice
             if stream:
-                params["stream"] = True  # add the stream parameter
+                params["stream"] = True
 
             self.log.debug(f"Request parameters: {json.dumps(params, indent=2)}")
 
@@ -254,6 +257,22 @@ class OpenRouterClient:
         except Exception as e:
             self.log.error(f"OpenRouter API Error: {str(e)}", exc_info=True)
             raise OpenRouterError(f"OpenRouter API Error with {model}: {str(e)}")
+
+    def fetch_all_models(self) -> dict:
+        """Fetch and cache all models from OpenRouter API."""
+        if self._all_models is None:
+            self.log.debug("Fetching all models from OpenRouter")
+            try:
+                response = requests.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {self.api_key}"}
+                )
+                response.raise_for_status()
+                self._all_models = response.json()  # Expecting {"data": [ ... ]}
+            except Exception as e:
+                self.log.error(f"Error fetching all models: {str(e)}", exc_info=True)
+                self._all_models = {"data": []}
+        return self._all_models
 
 class OpenRouterError(Exception):
     """Custom exception for OpenRouter API errors."""

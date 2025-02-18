@@ -8,6 +8,7 @@ import json
 import logging
 from typing import Tuple
 import datetime
+import difflib
 
 from .config import Config
 from .client import OpenRouterClient, OpenRouterError
@@ -145,7 +146,7 @@ class ChatGPTBot(Plugin):
         """Process a chat request."""
         current_content = ""
         last_update = datetime.datetime.now()
-        update_interval = datetime.timedelta(milliseconds=300)  # Update every 300ms at most
+        update_interval = datetime.timedelta(milliseconds=1000)  # Update every 300ms at most
 
         try:
             self.log.info(f"Processing chat request from {evt['sender']}")
@@ -179,7 +180,7 @@ class ChatGPTBot(Plugin):
             messages.extend([{"role": "user", "name": filtered_name, "content": query}])
 
             # Look for model override
-            pattern = re.compile(r"!([\w/:.-]+)")  # Match word chars, forward slashes, hyphens, colons, and dots
+            pattern = re.compile(r"!([\w/:.-]+)")  # Match allowed model string
             override_model = None
             for message in messages:
                 content = message.get("content")
@@ -187,19 +188,29 @@ class ChatGPTBot(Plugin):
                     continue
                 match = pattern.search(content)
                 if match:
-                    # Extract model name including the provider prefix
-                    override_model = match.group(1)  # Get the captured group without the !
+                    override_model = match.group(1)
                     self.log.info(f"Found model override: {override_model}")
-                    # If user didn't specify provider, assume openai
-                    if '/' not in override_model:
-                        override_model = f"openai/{override_model}"
-                        self.log.debug(f"Added provider prefix to model: {override_model}")
                     message["content"] = re.sub(pattern, "", content, count=1).strip()
-                    self.log.debug(f"Cleaned message content: {message['content']}")
+                    # Fetch available models and pick the closest match
+                    all_models_json = self.openrouter_client.fetch_all_models()
+                    all_ids = [model["id"] for model in all_models_json.get("data", [])]
+                    closest_matches = difflib.get_close_matches(override_model, all_ids, n=1, cutoff=0.3)
+                    if closest_matches:
+                        self.log.info(f"Replacing override '{override_model}' with closest match '{closest_matches[0]}'")
+                        override_model = closest_matches[0]
+                    else:
+                        self.log.debug("No close match found for override; using provided override")
                     break
 
             selected_model = override_model if override_model else self.config["model"]
+            if not selected_model.endswith(":free"):
+                free_candidate = f"{selected_model}:free"
+                all_models_json = self.openrouter_client.fetch_all_models()
+                all_ids = [model["id"] for model in all_models_json.get("data", [])]
+                if free_candidate in all_ids:
+                    selected_model = free_candidate
             self.log.info(f"Using model: {selected_model}")
+            await self._edit(evt.room_id, event_id, f"Using model: {selected_model}")
 
             # Log the full message context being sent
             self.log.debug(f"Full message context being sent to API: {json.dumps(messages, indent=2)}")
@@ -211,7 +222,8 @@ class ChatGPTBot(Plugin):
                 model=selected_model,
                 temperature=0.7,
                 tools=available_tools,
-                stream=True
+                stream=True,
+                include_reasoning=True
             )
 
             async def process_chunks():
@@ -228,17 +240,48 @@ class ChatGPTBot(Plugin):
                         elif "tool_calls" in delta and delta["tool_calls"]:
                             # Append tool call details as JSON so that function call can be parsed later
                             current_content += json.dumps(delta["tool_calls"][0]["function"])
+                        # Added support for reasoning: format as markdown italic for Matrix
+                        # Use separate accumulators for reasoning and content.
+                        if "content" in delta and delta["content"] is not None:
+                            # If content starts, append it.
+                            if "accumulated_content" not in locals():
+                                accumulated_content = ""
+                            if "accumulated_reasoning" not in locals():
+                                accumulated_reasoning = ""
+                            accumulated_content += delta["content"]
+                        else:
+                            # No content; accumulate reasoning.
+                            if "accumulated_reasoning" not in locals():
+                                accumulated_reasoning = ""
+                            if delta.get("reasoning") is not None:
+                                accumulated_reasoning += f"{delta['reasoning']}"
+
+                        # Determine what to preview:
+                        if "accumulated_content" not in locals() or not accumulated_content:
+                            # Only reasoning so far; show it as-is.
+                            preview = accumulated_reasoning.replace("\n", "<br>")
+                        else:
+                            # Content has started; display content normally and move reasoning into a <details> block if present.
+                            preview = accumulated_content
+                            if "accumulated_reasoning" in locals() and accumulated_reasoning:
+                                preview += f"<br><details><summary>Reasoning</summary><br>{accumulated_reasoning.replace('\n', '<br>')}<br></details>"
+
                         now = datetime.datetime.now()
-                        # Added logging for every streaming update
-                        self.log.debug(f"Streaming update: {current_content}")
-                        if now - last_update >= update_interval:
-                            await self._edit(evt.room_id, event_id, current_content)
+                        self.log.debug(f"Streaming update: {preview}")
+                        if now - last_update >= update_interval and (delta.get("content") or delta.get("reasoning")):
+                            await self._edit(evt.room_id, event_id, preview)
                             last_update = now
 
                 # Final update with complete content
-                if current_content:
-                    self.log.debug(f"Final streaming complete content: {current_content}")
-                    await self._edit(evt.room_id, event_id, current_content)
+                if ("accumulated_content" in locals() and accumulated_content) or ("accumulated_reasoning" in locals() and accumulated_reasoning):
+                    if "accumulated_content" in locals() and accumulated_content:
+                        final = accumulated_content
+                        if "accumulated_reasoning" in locals() and accumulated_reasoning:
+                            final += f"<br><details><summary>Reasoning</summary><br>{accumulated_reasoning.replace('\n', '<br>')}<br></details>"
+                    else:
+                        final = accumulated_reasoning.replace("\n", "<br>")
+                    self.log.debug(f"Final streaming complete content: {final}")
+                    await self._edit(evt.room_id, event_id, final)
 
             # Process the initial response
             await process_chunks()
@@ -317,7 +360,7 @@ class ChatGPTBot(Plugin):
             msgtype=MessageType.NOTICE,
             body=text,
             format=Format.HTML,
-            formatted_body=markdown.render(text)
+            formatted_body=markdown.render(text, allow_html=True)
         )
         content.set_edit(event_id)
         await self.client.send_message(room_id, content)
