@@ -175,7 +175,8 @@ class OpenRouterClient:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[str] = None,
         stream: bool = False,
-        include_reasoning: bool = False
+        include_reasoning: bool = False,
+        logprobs: bool = False,
     ) -> Any:
         """
         Create a chat completion using the OpenRouter API.
@@ -214,7 +215,7 @@ class OpenRouterClient:
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
-                "extra_body": {"include_reasoning": include_reasoning},
+                "extra_body": {"include_reasoning": include_reasoning, "logprobs": logprobs},
             }
 
             # Add optional parameters if provided

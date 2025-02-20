@@ -178,18 +178,22 @@ class ChatGPTBot(Plugin):
 
             # Add the current query
             messages.extend([{"role": "user", "name": filtered_name, "content": query}])
-
             # Look for model override
             pattern = re.compile(r"!([\w/:.-]+)")  # Match allowed model string
             override_model = None
+            online_requested = False
             for message in messages:
                 content = message.get("content")
                 if not content:
                     continue
                 match = pattern.search(content)
                 if match:
-                    override_model = match.group(1)
-                    self.log.info(f"Found model override: {override_model}")
+                    raw_override = match.group(1)
+                    if ":online" in raw_override:
+                        online_requested = True
+                        raw_override = raw_override.replace(":online", "")
+                    override_model = raw_override
+                    self.log.info(f"Found model override: {override_model}" + (f" with :online" if online_requested else ""))
                     message["content"] = re.sub(pattern, "", content, count=1).strip()
                     # Fetch available models and pick the closest match
                     all_models_json = self.openrouter_client.fetch_all_models()
@@ -200,10 +204,17 @@ class ChatGPTBot(Plugin):
                         override_model = closest_matches[0]
                     else:
                         self.log.debug("No close match found for override; using provided override")
+                    # If :online was requested, adjust the model name accordingly
+                    if online_requested:
+                        if override_model.endswith(":free"):
+                            override_model = override_model[:-5] + ":online"
+                        elif not override_model.endswith(":online"):
+                            override_model = f"{override_model}:online"
                     break
 
             selected_model = override_model if override_model else self.config["model"]
-            if not selected_model.endswith(":free"):
+            # Only add the free suffix if :online was not requested
+            if not online_requested and not selected_model.endswith(":free"):
                 free_candidate = f"{selected_model}:free"
                 all_models_json = self.openrouter_client.fetch_all_models()
                 all_ids = [model["id"] for model in all_models_json.get("data", [])]
@@ -259,7 +270,7 @@ class ChatGPTBot(Plugin):
                         # Determine what to preview:
                         if "accumulated_content" not in locals() or not accumulated_content:
                             # Only reasoning so far; show it as-is.
-                            preview = accumulated_reasoning.replace("\n", "<br>")
+                            preview = "*Reasoning...*<br>" + accumulated_reasoning.replace("\n", "<br>")
                         else:
                             # Content has started; display content normally and move reasoning into a <details> block if present.
                             preview = accumulated_content
@@ -267,7 +278,6 @@ class ChatGPTBot(Plugin):
                                 preview += f"<br><details><summary>Reasoning</summary><br>{accumulated_reasoning.replace('\n', '<br>')}<br></details>"
 
                         now = datetime.datetime.now()
-                        self.log.debug(f"Streaming update: {preview}")
                         if now - last_update >= update_interval and (delta.get("content") or delta.get("reasoning")):
                             await self._edit(evt.room_id, event_id, preview)
                             last_update = now
