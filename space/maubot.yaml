@@ -1,6 +1,6 @@
 maubot: 0.1.0
 id: fi.24-7.space
-version: 0.1.2
+version: 0.1.5
 license: AGPL-3.0-or-later
 modules:
 - space

@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import asyncio
 from typing import Type
+import os
 
 from mautrix.types import (StateEvent, EventType, MessageType,
                            RoomID, EventID, TextMessageEventContent, Format, MediaMessageEventContent, ImageInfo)
@@ -113,14 +114,18 @@ class SpaceBot(Plugin):
         except:
             return False
 
-    async def _get_media_content(self, image_data: str, external_url: str) -> TextMessageEventContent:
+    async def _get_media_content(self, image_data: str, image_url: str, external_url: str) -> TextMessageEventContent:
         mime_type = None
         if magic is not None:
             mime_type = magic.from_buffer(image_data, mime=True)
 
+        # Extract the filename from the image URL
+        filename = os.path.basename(image_url) or "image.png"
+
         uri = await self.client.upload_media(image_data, mime_type=mime_type)
 
         content = MediaMessageEventContent(url=uri,
+                                           body=filename,
                                            msgtype=MessageType.IMAGE,
                                            external_url=external_url,
                                            info=ImageInfo(
@@ -132,7 +137,7 @@ class SpaceBot(Plugin):
     async def post_picture(self, evt: MessageEvent, image_url: str, external_url: str, interval: int = 60):
         if interval:
             image_data = await self._download_image(image_url)
-            content = await self._get_media_content(image_data, external_url)
+            content = await self._get_media_content(image_data, image_url, external_url)
             image_event_id = await self.client.send_message(evt.room_id, content)
             content = TextMessageEventContent(body=f"▶️ {external_url}",
                                               formatted_body=f"▶️ <a href=\" {external_url}\">{external_url}</a>",
@@ -151,12 +156,12 @@ class SpaceBot(Plugin):
                     content = TextMessageEventContent(body=f"Failed to fetch image from {image_url}!",
                                                       msgtype=MessageType.TEXT)
                 else:
-                    content = await self._get_media_content(image_data, external_url)
+                    content = await self._get_media_content(image_data, image_url, external_url)
                 content.set_edit(image_event_id)
                 await self.client.send_message(evt.room_id, content)
 
         image_data = await self._download_image(image_url)
-        content = await self._get_media_content(image_data, external_url)
+        content = await self._get_media_content(image_data, image_url, external_url)
         try:
             content.set_edit(image_event_id)
         except:
